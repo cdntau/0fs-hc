@@ -13,22 +13,22 @@ jobs:
         id: creds
         run: |
           case "${{ github.event.client_payload.bucket_code }}" in
-            "EUC")
+            "e1")
               echo "key_id=${{ secrets.B2_EUC_AWS_ACCESS_KEY_ID }}"     >> $GITHUB_OUTPUT
               echo "secret=${{ secrets.B2_EUC_AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_OUTPUT
               echo "endpoint=${{ secrets.B2_EUC_ENDPOINT }}"            >> $GITHUB_OUTPUT
               ;;
-            "CAE")
+            "e2")
               echo "key_id=${{ secrets.B2_CAE_AWS_ACCESS_KEY_ID }}"     >> $GITHUB_OUTPUT
               echo "secret=${{ secrets.B2_CAE_AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_OUTPUT
               echo "endpoint=${{ secrets.B2_CAE_ENDPOINT }}"            >> $GITHUB_OUTPUT
               ;;
-            "USE")
+            "e3")
               echo "key_id=${{ secrets.B2_USE_AWS_ACCESS_KEY_ID }}"     >> $GITHUB_OUTPUT
               echo "secret=${{ secrets.B2_USE_AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_OUTPUT
               echo "endpoint=${{ secrets.B2_USE_ENDPOINT }}"            >> $GITHUB_OUTPUT
               ;;
-            "USW")
+            "e4")
               echo "key_id=${{ secrets.B2_USW_AWS_ACCESS_KEY_ID }}"     >> $GITHUB_OUTPUT
               echo "secret=${{ secrets.B2_USW_AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_OUTPUT
               echo "endpoint=${{ secrets.B2_USW_ENDPOINT }}"            >> $GITHUB_OUTPUT
