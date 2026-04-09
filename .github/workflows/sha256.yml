@@ -45,49 +45,59 @@ jobs:
       - name: Stream SHA256 with SSE-C
         id: sha
         env:
+          AWS_ACCESS_KEY_ID: ${{ steps.creds.outputs.key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.creds.outputs.secret }}
           SSEC_KEY_B64: ${{ github.event.client_payload.ssec_key_b64 }}
         run: |
           echo "::add-mask::$SSEC_KEY_B64"
-
+      
           SSEC_KEY_MD5=$(echo -n "$SSEC_KEY_B64" | base64 -d | openssl dgst -md5 -binary | base64 -w 0)
-
-          # presign a GET URL via awscli, then stream via curl — zero buffering
-          PRESIGNED=$(AWS_ACCESS_KEY_ID="${{ steps.creds.outputs.key_id }}" \
-                      AWS_SECRET_ACCESS_KEY="${{ steps.creds.outputs.secret }}" \
-                      aws s3 presign \
-                        --endpoint-url "${{ steps.creds.outputs.endpoint }}" \
-                        "s3://${{ github.event.client_payload.bucket_name }}/${{ github.event.client_payload.s3_key }}" \
-                        --expires-in 3600)
-
-          # curl streams directly into sha256sum — no disk, no memory accumulation
-          SHA=$(curl -sf \
+      
+          # generate a presigned GET URL — this is just a signing operation, no data transfer
+          PRESIGNED=$(aws s3 presign \
+            --endpoint-url "${{ steps.creds.outputs.endpoint }}" \
+            "s3://${{ github.event.client_payload.bucket_name }}/${{ github.event.client_payload.s3_key }}" \
+            --expires-in 7200)
+      
+          if [[ -z "$PRESIGNED" ]]; then
+            echo "Failed to generate presigned URL"
+            exit 1
+          fi
+      
+          # curl streams TCP chunks directly into sha256sum stdin
+          # no disk writes, peak memory is ~a few MB regardless of file size
+          SHA=$(curl -sf --no-buffer \
             -H "x-amz-server-side-encryption-customer-algorithm: AES256" \
             -H "x-amz-server-side-encryption-customer-key: $SSEC_KEY_B64" \
             -H "x-amz-server-side-encryption-customer-key-MD5: $SSEC_KEY_MD5" \
             "$PRESIGNED" \
             | sha256sum | awk '{print $1}')
-
+      
+          echo "Computed SHA256: $SHA"
+      
           if [[ ! "$SHA" =~ ^[a-f0-9]{64}$ ]]; then
-            echo "Invalid SHA256 output: '$SHA'"
+            echo "Invalid SHA256 — likely empty or failed download"
             exit 1
           fi
-
-          echo "sha256=$SHA" >> $GITHUB_OUTPUT
-
       
+          echo "sha256=$SHA" >> $GITHUB_OUTPUT      
       - name: Push result to Django
         run: |
-          HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
+          HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" \
             -X PATCH \
             "${{ secrets.DJANGO_API_BASE }}/api/${{ github.event.client_payload.fileid }}/sha256/" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.DJANGO_SHA256_CALLBACK_TOKEN }}" \
             -d "{\"sha256\": \"${{ steps.sha.outputs.sha256 }}\"}")
-
-          echo "Django responded with: $HTTP_STATUS"
-
+      
+          HTTP_BODY=$(echo "$HTTP_RESPONSE" | head -n -1)
+          HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tail -n 1)
+      
+          echo "Status: $HTTP_STATUS"
+          echo "Body: $HTTP_BODY"
+      
           if [[ "$HTTP_STATUS" != "200" ]]; then
-            echo "Django callback failed with status $HTTP_STATUS"
+            echo "Django callback failed"
             exit 1
           fi
 
