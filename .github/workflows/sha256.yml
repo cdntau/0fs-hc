@@ -1,0 +1,104 @@
+name: Compute SHA256
+
+on:
+  repository_dispatch:
+    types: [compute-sha256]
+
+jobs:
+  sha256:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Select bucket credentials
+        id: creds
+        run: |
+          case "${{ github.event.client_payload.bucket_code }}" in
+            "EUC")
+              echo "key_id=${{ secrets.B2_EUC_AWS_ACCESS_KEY_ID }}"     >> $GITHUB_OUTPUT
+              echo "secret=${{ secrets.B2_EUC_AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_OUTPUT
+              echo "endpoint=${{ secrets.B2_EUC_ENDPOINT }}"            >> $GITHUB_OUTPUT
+              ;;
+            "CAE")
+              echo "key_id=${{ secrets.B2_CAE_AWS_ACCESS_KEY_ID }}"     >> $GITHUB_OUTPUT
+              echo "secret=${{ secrets.B2_CAE_AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_OUTPUT
+              echo "endpoint=${{ secrets.B2_CAE_ENDPOINT }}"            >> $GITHUB_OUTPUT
+              ;;
+            "USE")
+              echo "key_id=${{ secrets.B2_USE_AWS_ACCESS_KEY_ID }}"     >> $GITHUB_OUTPUT
+              echo "secret=${{ secrets.B2_USE_AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_OUTPUT
+              echo "endpoint=${{ secrets.B2_USE_ENDPOINT }}"            >> $GITHUB_OUTPUT
+              ;;
+            "USW")
+              echo "key_id=${{ secrets.B2_USW_AWS_ACCESS_KEY_ID }}"     >> $GITHUB_OUTPUT
+              echo "secret=${{ secrets.B2_USW_AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_OUTPUT
+              echo "endpoint=${{ secrets.B2_USW_ENDPOINT }}"            >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "Unknown bucket_code: ${{ github.event.client_payload.bucket_code }}"
+              exit 1
+              ;;
+          esac
+
+      - name: Install awscli
+        run: pip install awscli --quiet
+
+      - name: Stream SHA256 with SSE-C
+        id: sha
+        env:
+          AWS_ACCESS_KEY_ID: ${{ steps.creds.outputs.key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.creds.outputs.secret }}
+          SSEC_KEY_B64: ${{ github.event.client_payload.ssec_key_b64 }}
+        run: |
+          # redact key from all future log output
+          echo "::add-mask::$SSEC_KEY_B64"
+
+          # key arrives as b64 — compute its MD5 from raw bytes
+          SSEC_KEY_MD5=$(echo -n "$SSEC_KEY_B64" | base64 -d | openssl dgst -md5 -binary | base64 -w 0)
+
+          SHA=$(aws s3api get-object \
+            --endpoint-url "${{ steps.creds.outputs.endpoint }}" \
+            --bucket "${{ github.event.client_payload.bucket_name }}" \
+            --key "${{ github.event.client_payload.s3_key }}" \
+            --sse-customer-algorithm AES256 \
+            --sse-customer-key "$SSEC_KEY_B64" \
+            --sse-customer-key-md5 "$SSEC_KEY_MD5" \
+            /dev/stdout 2>/dev/null \
+            | sha256sum | awk '{print $1}')
+
+          # sanity check — sha256 is always exactly 64 hex chars
+          if [[ ! "$SHA" =~ ^[a-f0-9]{64}$ ]]; then
+            echo "Invalid SHA256 output: $SHA"
+            exit 1
+          fi
+
+          echo "sha256=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Push result to Django
+        run: |
+          HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
+            -X PATCH \
+            "${{ secrets.DJANGO_API_BASE }}/api/files/${{ github.event.client_payload.fileid }}/sha256/" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.DJANGO_SHA256_CALLBACK_TOKEN }}" \
+            -d "{\"sha256\": \"${{ steps.sha.outputs.sha256 }}\"}")
+
+          echo "Django responded with: $HTTP_STATUS"
+
+          if [[ "$HTTP_STATUS" != "200" ]]; then
+            echo "Django callback failed with status $HTTP_STATUS"
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## SHA256 Job
+          | Field   | Value |
+          |---------|-------|
+          | File ID | \`${{ github.event.client_payload.fileid }}\` |
+          | Bucket  | \`${{ github.event.client_payload.bucket_name }}\` |
+          | Key     | \`${{ github.event.client_payload.s3_key }}\` |
+          | Size    | \`${{ github.event.client_payload.filesize }}\` bytes |
+          | SHA256  | \`${{ steps.sha.outputs.sha256 }}\` |
+          EOF
