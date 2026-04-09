@@ -77,7 +77,7 @@ jobs:
         run: |
           HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
             -X PATCH \
-            "${{ secrets.DJANGO_API_BASE }}/api/files/${{ github.event.client_payload.fileid }}/sha256/" \
+            "${{ secrets.DJANGO_API_BASE }}/api/${{ github.event.client_payload.fileid }}/sha256/" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.DJANGO_SHA256_CALLBACK_TOKEN }}" \
             -d "{\"sha256\": \"${{ steps.sha.outputs.sha256 }}\"}")
