@@ -45,7 +45,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ steps.creds.outputs.key_id }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.creds.outputs.secret }}
         run: |
-      
+          set -o pipefail
           # generate a presigned GET URL — this is just a signing operation, no data transfer
           PRESIGNED=$(aws s3 presign \
             --endpoint-url "${{ steps.creds.outputs.endpoint }}" \
