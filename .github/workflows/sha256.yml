@@ -33,6 +33,11 @@ jobs:
               echo "secret=${{ secrets.B2_USW_AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_OUTPUT
               echo "endpoint=${{ secrets.B2_USW_ENDPOINT }}"            >> $GITHUB_OUTPUT
               ;;
+            "zerocdn")
+              echo "key_id=${{ secrets.B2_ZEROCDN_AWS_ACCESS_KEY_ID }}"     >> $GITHUB_OUTPUT
+              echo "secret=${{ secrets.B2_ZEROCDN_AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_OUTPUT
+              echo "endpoint=${{ secrets.B2_ZEROCDN_ENDPOINT }}"            >> $GITHUB_OUTPUT
+              ;;
             *)
               echo "Unknown bucket_code: ${{ github.event.client_payload.bucket_code }}"
               exit 1
